@@ -69,7 +69,7 @@ static void vcpu_idle(qemu_plugin_id_t id, unsigned int cpu_index)
 static void vcpu_tb_exec(unsigned int cpu_index, void *udata)
 {
     CPUCount *count = max_cpus ?
-      (CPUCount *)g_ptr_array_index(counts, cpu_index) : &inline_count;
+        (CPUCount *)g_ptr_array_index(counts, cpu_index) : &inline_count;
 
     uintptr_t n_insns = (uintptr_t)udata;
     g_mutex_lock(&count->lock);
