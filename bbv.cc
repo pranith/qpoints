@@ -70,11 +70,15 @@ static void plugin_exit(qemu_plugin_id_t id, void *p)
     pc_file.close();
 }
 
-static void plugin_init(void)
+static void plugin_init(std::string& bench_name)
 {
+    std::string bbv_file_name = bench_name + "_bbv.gz";
+    std::string pc_file_name  = bench_name + "_pc.txt";
+
+    bbv_file = gzopen(bbv_file_name.c_str(), "w");
+    pc_file.open(pc_file_name.c_str(), std::ofstream::out);
+
     hotblocks = g_hash_table_new(NULL, g_direct_equal);
-    bbv_file = gzopen("bbv.gz", "w");
-    pc_file.open("pc.txt", std::ofstream::out);
 }
 
 static void tb_exec(unsigned int cpu_index, void *udata)
@@ -145,7 +149,11 @@ QEMU_PLUGIN_EXPORT
 int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info,
                         int argc, char **argv)
 {
-    plugin_init();
+    std::string bench_name("trace");
+    if (argc) {
+        bench_name = argv[0];
+    }
+    plugin_init(bench_name);
 
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_record);
     qemu_plugin_register_atexit_cb(id, plugin_exit, NULL);
