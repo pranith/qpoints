@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <fstream>
 
 #include <inttypes.h>
 #include <assert.h>
@@ -27,6 +28,7 @@ static uint64_t unique_trans_id = 0; /* unique id assigned to TB */
 static uint64_t inst_count = 0; /* executed instruction count */
 
 static gzFile bbv_file;
+static std::ofstream pc_file;
 
 /*
  * Counting Structure
@@ -40,6 +42,7 @@ typedef struct {
     uint64_t start_addr;
     uint64_t exec_count;
     uint64_t id;
+    uint64_t pc;
     int      trans_count;
     unsigned long insns;
 } ExecCount;
@@ -64,12 +67,14 @@ static void plugin_exit(qemu_plugin_id_t id, void *p)
 
     g_mutex_unlock(&lock);
     gzclose(bbv_file);
+    pc_file.close();
 }
 
 static void plugin_init(void)
 {
     hotblocks = g_hash_table_new(NULL, g_direct_equal);
     bbv_file = gzopen("bbv.gz", "w");
+    pc_file.open("pc.txt", std::ofstream::out);
 }
 
 static void tb_exec(unsigned int cpu_index, void *udata)
@@ -92,6 +97,8 @@ static void tb_exec(unsigned int cpu_index, void *udata)
             }
             it = it->next;
             i++;
+
+            pc_file << std::dec << rec->id << ":" << std::hex << "0x" << rec->pc << std::endl;
         }
 
         bb_stat << std::endl;
@@ -118,6 +125,7 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         cnt->trans_count = 1;
         cnt->id = ++unique_trans_id;
         cnt->insns = insns;
+        cnt->pc = pc;
         g_hash_table_insert(hotblocks, (gpointer) hash, (gpointer) cnt);
     }
 
