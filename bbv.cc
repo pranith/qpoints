@@ -83,31 +83,36 @@ static void plugin_init(std::string& bench_name)
 
 static void tb_exec(unsigned int cpu_index, void *udata)
 {
+    static int interval_cnt = 0;
+
     g_mutex_lock(&lock);
     if (inst_count >= 100000000 /*interval*/) {
         std::ostringstream bb_stat;
         GList *counts, *it;
-        int i = 0;
+        int tb_count = 0;
 
         counts = g_hash_table_get_values(hotblocks);
         it = g_list_sort(counts, cmp_exec_count);
-        bb_stat << "T";
 
-        while (it && i < 100) {
-            ExecCount *rec = (ExecCount *) it->data;
-            if (rec->exec_count) {
-                bb_stat << " :" << rec->id << ":" << rec->exec_count * rec->insns;
-                rec->exec_count = 0;
+        if (it) {
+            bb_stat << "T";
+            while (tb_count < 100) {
+                ExecCount *rec = (ExecCount *) it->data;
+                if (rec->exec_count) {
+                    bb_stat << " :" << rec->id << ":" << rec->exec_count * rec->insns;
+                    rec->exec_count = 0;
+                }
+                it = it->next;
+                tb_count++;
+
+                pc_file << std::dec << interval_cnt << ":" << std::hex << "0x" << rec->pc << std::endl;
             }
-            it = it->next;
-            i++;
 
-            pc_file << std::dec << rec->id << ":" << std::hex << "0x" << rec->pc << std::endl;
+            bb_stat << std::endl;
+            gzwrite(bbv_file, bb_stat.str().c_str(), bb_stat.str().length());
+            inst_count = 0;
+            interval_cnt++;
         }
-
-        bb_stat << std::endl;
-        gzwrite(bbv_file, bb_stat.str().c_str(), bb_stat.str().length());
-        inst_count = 0;
     }
     g_mutex_unlock(&lock);
 }
