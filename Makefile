@@ -6,3 +6,6 @@ all: libbbv.so
 
 libbbv.so: bbv.cc
 	$(CXX) $(CXXFLAGS) -shared -fPIC -o $@ $< -ldl -lrt
+
+clean:
+	rm -f *.o libbbv.so
