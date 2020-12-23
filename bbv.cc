@@ -1,8 +1,12 @@
 /*
  * Copyright (C) 2020, Pranith Kumar <bobby.prani@gmail.com>
  *
+ * Find the hot regions of code in intervals of 100M instructions
+ *
  */
+extern "C" {
 #include "qemu-plugin.h"
+}
 
 #include <iostream>
 #include <sstream>
@@ -17,6 +21,8 @@
 #include <stdio.h>
 #include <glib.h>
 #include <zlib.h>
+
+#define INTERVAL_SIZE 100000000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
@@ -86,7 +92,7 @@ static void tb_exec(unsigned int cpu_index, void *udata)
     static int interval_cnt = 0;
 
     g_mutex_lock(&lock);
-    if (inst_count >= 100000000 /*interval*/) {
+    if (inst_count >= INTERVAL_SIZE) {
         std::ostringstream bb_stat;
         GList *counts, *it;
         int tb_count = 0;
