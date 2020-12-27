@@ -21,11 +21,11 @@ extern "C" {
 #include <glib.h>
 #include <zlib.h>
 
-#define INTERVAL_SIZE 100000000 /* 100M instructions */
+#define INTERVAL_SIZE 10000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
-static enum qemu_plugin_mem_rw rw = QEMU_PLUGIN_MEM_RW;
+static enum qemu_plugin_mem_rw rw = QEMU_PLUGIN_MEM_R;
 static qemu_plugin_id_t plugin_id;
 
 /* Plugins need to take care of their own locking */
@@ -40,6 +40,7 @@ static std::ifstream simpts_file;
 static std::set<uint64_t> interval_set;
 
 static bool tracing_enabled = false;
+static uint32_t interval_id = 0;
 
 /*
  * Counting Structure
@@ -93,18 +94,23 @@ static void plugin_init(std::string& bench_name)
 static void vcpu_insn_exec_before(unsigned int cpu_index, void *udata)
 {
     inst_dumped++;
-    std::cout << "Inst callback" << std::endl;
+    struct qemu_plugin_insn *insn = (struct qemu_plugin_insn *)udata;
+
+    uint32_t opcode = *((uint32_t *)qemu_plugin_insn_data(insn));
+    std::cout << "Inst callback insn " << std::hex << insn << " pc:" << qemu_plugin_insn_vaddr(insn) << " " << opcode << " " << qemu_plugin_insn_disas(insn) << std::endl;
 }
 
 static void vcpu_mem(unsigned int cpu_index, qemu_plugin_meminfo_t meminfo, uint64_t vaddr, void *udata)
 {
-    std::cout << "Mem callback" << std::endl;
+    struct qemu_plugin_insn *insn = (struct qemu_plugin_insn *)udata;
+    std::cout << "Mem callback insn " << std::hex << insn << " pc:" << qemu_plugin_insn_vaddr(insn) << " addr:" << vaddr << " store:" << qemu_plugin_mem_is_store(meminfo) << std::endl;
 }
 
 static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb);
 
 static void callback_reset(qemu_plugin_id_t id)
 {
+    std::cout << "Resetting plugin" << std::endl;
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_record);
 }
 
@@ -123,6 +129,7 @@ static void tb_exec(unsigned int cpu_index, void *udata)
     if (interval_set.find(interval) != interval_set.end()) {
         tracing_enabled = true;
         inst_dumped = 0;
+        interval_id++;
     }
 
     g_mutex_unlock(&lock);
@@ -131,7 +138,6 @@ static void tb_exec(unsigned int cpu_index, void *udata)
 static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
 {
     size_t insns = qemu_plugin_tb_n_insns(tb);
-
     qemu_plugin_register_vcpu_tb_exec_inline(tb, QEMU_PLUGIN_INLINE_ADD_U64,
                                              &inst_count, insns);
     qemu_plugin_register_vcpu_tb_exec_cb(tb, tb_exec,
@@ -140,13 +146,12 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
 
     if (tracing_enabled) {
         // Start tracing the execution
-        size_t n = qemu_plugin_tb_n_insns(tb);
-        size_t i;
-
-        for (i = 0; i < n; i++) {
+        for (size_t i = 0; i < insns; i++) {
             struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
-            qemu_plugin_register_vcpu_insn_exec_cb(insn, vcpu_insn_exec_before, QEMU_PLUGIN_CB_NO_REGS, NULL);
-            qemu_plugin_register_vcpu_mem_cb(insn, vcpu_mem, QEMU_PLUGIN_CB_NO_REGS, rw, NULL);
+            qemu_plugin_register_vcpu_insn_exec_cb(insn, vcpu_insn_exec_before, QEMU_PLUGIN_CB_NO_REGS, insn);
+            qemu_plugin_register_vcpu_mem_cb(insn, vcpu_mem, QEMU_PLUGIN_CB_NO_REGS, rw, insn);
+            uint64_t pc = qemu_plugin_insn_vaddr(insn);
+            std::cout << "Installing inst and mem cbs for insn " << std::hex << insn << " at pc:" << pc << std::endl;
         }
     }
 }
