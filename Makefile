@@ -8,7 +8,7 @@ libbbv.so: bbv.cc
 	$(CXX) $(CXXFLAGS) -shared -fPIC -o $@ $< -ldl -lrt
 
 libtracer.so: tracer.cc
-	$(CXX) $(CXXFLAGS) -shared -fPIC -o $@ $< -ldl -lrt
+	$(CXX) $(CXXFLAGS) -shared -fPIC -o $@ $< cs_disas.cc -ldl -lrt
 
 clean:
 	rm -f *.o libbbv.so
