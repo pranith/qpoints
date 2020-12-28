@@ -11,6 +11,7 @@ extern "C" {
 #include <fstream>
 #include <set>
 #include <map>
+#include <mutex>
 
 #include <inttypes.h>
 #include <assert.h>
@@ -19,11 +20,11 @@ extern "C" {
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <glib.h>
 #include <zlib.h>
 
 #include "cs_disas.h"
 
+#define DEBUG 1
 #define INTERVAL_SIZE 10000000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -32,7 +33,7 @@ static enum qemu_plugin_mem_rw rw = QEMU_PLUGIN_MEM_RW;
 static qemu_plugin_id_t plugin_id;
 
 /* Plugins need to take care of their own locking */
-static GMutex lock;
+static std::mutex lock;
 
 static uint64_t inst_count = 0; /* executed instruction count */
 static uint64_t inst_dumped = 0; /* traced instruction count  */
@@ -45,17 +46,23 @@ static uint32_t interval_id = 0;
 
 static std::map<uint64_t, uint32_t> instructions;
 
-static cs_disas dis(CS_ARCH_ARM64, CS_MODE_ARM);
+static cs_disas dis;
 
 void plugin_exit(qemu_plugin_id_t id, void *p)
 {
     simpts_file.close();
 }
 
-static void plugin_init(std::string& bench_name)
+static void plugin_init(std::string& bench_name, std::string& arch)
 {
     std::string simpts_file_name = bench_name + ".simpts";
     simpts_file.open(simpts_file_name.c_str(), std::ifstream::in);
+
+    if (arch == "arm64") {
+        dis.init(CS_ARCH_ARM64, CS_MODE_ARM);
+    } else {
+        dis.init(CS_ARCH_X86, CS_MODE_64);
+    }
 
     while (!simpts_file.eof())
     {
@@ -109,8 +116,9 @@ static void callback_reset(qemu_plugin_id_t id)
 
 static void tb_exec(unsigned int cpu_index, void *udata)
 {
-    g_mutex_lock(&lock);
     uint64_t interval = inst_count / INTERVAL_SIZE;
+
+    lock.lock();
 
     if (tracing_enabled) {
         if (inst_dumped > INTERVAL_SIZE) {
@@ -125,7 +133,7 @@ static void tb_exec(unsigned int cpu_index, void *udata)
         interval_id++;
     }
 
-    g_mutex_unlock(&lock);
+    lock.unlock();
 }
 
 static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
@@ -155,11 +163,18 @@ int qemu_plugin_install(qemu_plugin_id_t id, const qemu_info_t *info,
                         int argc, char **argv)
 {
     std::string bench_name("trace");
-    if (argc) {
-        bench_name = argv[0];
+    std::string arch("arm64");
+
+    if (argc < 2) {
+        std::cerr << "Tracer plugin usage: pass bench name and architecture as arguments" << std::endl;
+        exit(1);
     }
+
+    bench_name = argv[0];
+    arch = argv[1];
+
     plugin_id = id;
-    plugin_init(bench_name);
+    plugin_init(bench_name, arch);
 
     qemu_plugin_register_vcpu_tb_trans_cb(id, tb_record);
     qemu_plugin_register_atexit_cb(id, plugin_exit, NULL);

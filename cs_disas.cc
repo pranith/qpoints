@@ -3,6 +3,11 @@
 
 cs_disas::cs_disas(cs_arch arch, cs_mode mode)
 {
+    init(arch, mode);
+}
+
+void cs_disas::init(cs_arch arch, cs_mode mode)
+{
     pf = { arch, mode};
     cs_err err = cs_open(pf.arch, pf.mode, &handle);
     if (err) {

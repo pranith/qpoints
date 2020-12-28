@@ -11,6 +11,7 @@ extern "C" {
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <mutex>
 
 #include <inttypes.h>
 #include <assert.h>
@@ -27,8 +28,9 @@ extern "C" {
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
 /* Plugins need to take care of their own locking */
-static GMutex lock;
+static std::mutex lock;
 static GHashTable *hotblocks;
+static std::map blocks;
 
 static uint64_t unique_trans_id = 0; /* unique id assigned to TB */
 static uint64_t inst_count = 0; /* executed instruction count */
@@ -64,14 +66,14 @@ static void plugin_exit(qemu_plugin_id_t id, void *p)
 {
     GList *it;
 
-    g_mutex_lock(&lock);
+    lock.lock();
     it = g_hash_table_get_values(hotblocks);
 
     if (it) {
         g_list_free(it);
     }
 
-    g_mutex_unlock(&lock);
+    lock.unlock();
     gzclose(bbv_file);
     pc_file.close();
 }
@@ -91,7 +93,7 @@ static void tb_exec(unsigned int cpu_index, void *udata)
 {
     static int interval_cnt = 0;
 
-    g_mutex_lock(&lock);
+    lock.lock();
     if (inst_count >= INTERVAL_SIZE) {
         std::ostringstream bb_stat;
         GList *counts, *it;
@@ -120,7 +122,7 @@ static void tb_exec(unsigned int cpu_index, void *udata)
             interval_cnt++;
         }
     }
-    g_mutex_unlock(&lock);
+    lock.unlock();
 }
 
 static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
@@ -130,7 +132,7 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
     size_t insns = qemu_plugin_tb_n_insns(tb);
     uint64_t hash = pc ^ insns;
 
-    g_mutex_lock(&lock);
+    lock.lock();
     cnt = (ExecCount *) g_hash_table_lookup(hotblocks, (gconstpointer) hash);
     if (cnt) {
         cnt->trans_count++;
@@ -144,7 +146,7 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         g_hash_table_insert(hotblocks, (gpointer) hash, (gpointer) cnt);
     }
 
-    g_mutex_unlock(&lock);
+    lock.unlock();
 
     /* count the number of instructions executed */
     qemu_plugin_register_vcpu_tb_exec_inline(tb, QEMU_PLUGIN_INLINE_ADD_U64,
