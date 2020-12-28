@@ -33,12 +33,10 @@ static qemu_plugin_id_t plugin_id;
 
 /* Plugins need to take care of their own locking */
 static GMutex lock;
-static GHashTable *hotblocks;
 
 static uint64_t inst_count = 0; /* executed instruction count */
 static uint64_t inst_dumped = 0; /* traced instruction count  */
 
-static gzFile bbv_file;
 static std::ifstream simpts_file;
 static std::set<uint64_t> interval_set;
 
@@ -49,20 +47,11 @@ static std::map<uint64_t, uint32_t> instructions;
 
 static cs_disas dis(CS_ARCH_ARM64, CS_MODE_ARM);
 
-static void plugin_exit(qemu_plugin_id_t id, void *p)
+void plugin_exit(qemu_plugin_id_t id, void *p)
 {
-    GList *it;
-
-    g_mutex_lock(&lock);
-    it = g_hash_table_get_values(hotblocks);
-
-    if (it) {
-        g_list_free(it);
-    }
-
-    g_mutex_unlock(&lock);
-    gzclose(bbv_file);
+    simpts_file.close();
 }
+
 static void plugin_init(std::string& bench_name)
 {
     std::string simpts_file_name = bench_name + ".simpts";
