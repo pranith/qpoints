@@ -12,6 +12,10 @@ extern "C" {
 #include <sstream>
 #include <fstream>
 #include <mutex>
+#include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <iterator>
 
 #include <inttypes.h>
 #include <assert.h>
@@ -30,7 +34,6 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 /* Plugins need to take care of their own locking */
 static std::mutex lock;
 static GHashTable *hotblocks;
-static std::map blocks;
 
 static uint64_t unique_trans_id = 0; /* unique id assigned to TB */
 static uint64_t inst_count = 0; /* executed instruction count */
@@ -46,14 +49,22 @@ static std::ofstream pc_file;
  * xor'ing the number of instructions to the hash to help
  * differentiate.
  */
-typedef struct {
+class ExecCount {
+public:
     uint64_t start_addr;
     uint64_t exec_count;
     uint64_t id;
     uint64_t pc;
     int      trans_count;
     unsigned long insns;
-} ExecCount;
+
+    bool operator < (const ExecCount& elem) const
+    {
+        return (exec_count > elem.exec_count);
+    }
+};
+
+static std::unordered_map<uint64_t, ExecCount> hotblocks_map;
 
 static gint cmp_exec_count(gconstpointer a, gconstpointer b)
 {
@@ -67,6 +78,7 @@ static void plugin_exit(qemu_plugin_id_t id, void *p)
     GList *it;
 
     lock.lock();
+    hotblocks_map.clear();
     it = g_hash_table_get_values(hotblocks);
 
     if (it) {
@@ -99,6 +111,11 @@ static void tb_exec(unsigned int cpu_index, void *udata)
         GList *counts, *it;
         int tb_count = 0;
 
+        std::vector<ExecCount> hotblocks_vec;
+        std::transform(hotblocks_map.begin(), hotblocks_map.end(),
+                       std::back_inserter(hotblocks_vec),
+                       [] (auto &el) {return el.second;});
+        std::sort(hotblocks_vec.begin(), hotblocks_vec.end());
         counts = g_hash_table_get_values(hotblocks);
         it = g_list_sort(counts, cmp_exec_count);
 
@@ -106,14 +123,15 @@ static void tb_exec(unsigned int cpu_index, void *udata)
             bb_stat << "T";
             while (tb_count < 100) {
                 ExecCount *rec = (ExecCount *) it->data;
+                pc_file << std::dec << interval_cnt << ":O:" << std::hex << "0x" << rec->pc << " counts:" << std::dec << rec->exec_count << std::endl;
+                pc_file << std::dec << interval_cnt << ":N:" << std::hex << "0x" << hotblocks_vec[tb_count].pc << " counts:" << std::dec << hotblocks_vec[tb_count].exec_count << std::endl;
+                tb_count++;
+
                 if (rec->exec_count) {
                     bb_stat << " :" << rec->id << ":" << rec->exec_count * rec->insns;
                     rec->exec_count = 0;
                 }
                 it = it->next;
-                tb_count++;
-
-                pc_file << std::dec << interval_cnt << ":" << std::hex << "0x" << rec->pc << std::endl;
             }
 
             bb_stat << std::endl;
@@ -133,8 +151,11 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
     uint64_t hash = pc ^ insns;
 
     lock.lock();
+    auto el = hotblocks_map.find(hash);
     cnt = (ExecCount *) g_hash_table_lookup(hotblocks, (gconstpointer) hash);
     if (cnt) {
+        assert(el != hotblocks_map.end());
+        assert(el->second.trans_count == cnt->trans_count);
         cnt->trans_count++;
     } else {
         cnt = g_new0(ExecCount, 1);
@@ -144,6 +165,12 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         cnt->insns = insns;
         cnt->pc = pc;
         g_hash_table_insert(hotblocks, (gpointer) hash, (gpointer) cnt);
+    }
+
+    if (hotblocks_map.find(hash) != hotblocks_map.end()) {
+        el->second.trans_count++;
+    } else {
+        hotblocks_map.insert(std::make_pair(hash, *cnt));
     }
 
     lock.unlock();
