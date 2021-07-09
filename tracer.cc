@@ -60,6 +60,10 @@ static void plugin_init(std::string& bench_name, std::string& arch)
 
     if (arch == "arm64") {
         dis.init(CS_ARCH_ARM64, CS_MODE_ARM);
+    } else if (arch == "riscv64") {
+        dis.init(CS_ARCH_RISCV, CS_MODE_RISCV64);
+    } else if (arch == "riscv64c") {
+        dis.init(CS_ARCH_RISCV, CS_MODE_RISCVC);
     } else {
         dis.init(CS_ARCH_X86, CS_MODE_64);
     }

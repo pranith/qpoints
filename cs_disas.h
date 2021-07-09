@@ -1,8 +1,8 @@
 #include <capstone/capstone.h>
 
 struct platform {
-	cs_arch arch;
-	cs_mode mode;
+    cs_arch arch;
+    cs_mode mode;
 };
 
 class cs_disas {
