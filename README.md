@@ -5,8 +5,10 @@ Compiling
 ---
 Set QEMU_DIR to point to the qemu source folder before running make.
 
+```
 $ export QEMU_DIR=/path/to/qemu
 $ make
+```
 
 Running
 ---
@@ -22,6 +24,10 @@ $ ./SimPoint.3.2/bin/simpoint -inputVectorsGzipped -loadFVFile <bench_name>_bbv.
 
 The generated simpts and weights file are used by the tracer plugin to generate
 traces.
+
+Then you run tracer to generate the traces.
+
+$ ./qemu-aarch64 -d plugin -plugin ../../qpoints/libtracer.so,arg=<bench_name> /path/to/benchmark/
 
 Related
 ---
