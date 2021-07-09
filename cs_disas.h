@@ -1,4 +1,4 @@
-#include <capstone/capstone.h>
+#include "capstone/capstone.h"
 
 struct platform {
     cs_arch arch;
