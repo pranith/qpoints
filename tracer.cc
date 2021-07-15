@@ -24,7 +24,6 @@ extern "C" {
 
 #include "cs_disas.h"
 
-#define DEBUG 1
 #define INTERVAL_SIZE 10000000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -44,7 +43,7 @@ static std::set<uint64_t> interval_set;
 static bool tracing_enabled = false;
 static uint32_t interval_id = 0;
 
-static std::map<uint64_t, uint32_t> instructions;
+static std::map<uint64_t, struct qemu_plugin_insn *> instructions;
 
 static cs_disas dis;
 
@@ -57,15 +56,21 @@ static void plugin_init(std::string& bench_name, std::string& arch)
 {
     std::string simpts_file_name = bench_name + ".simpts";
     simpts_file.open(simpts_file_name.c_str(), std::ifstream::in);
+    cs_err ret;
 
     if (arch == "arm64") {
-        dis.init(CS_ARCH_ARM64, CS_MODE_ARM);
+        ret = dis.init(CS_ARCH_ARM64, CS_MODE_ARM);
     } else if (arch == "riscv64") {
-        dis.init(CS_ARCH_RISCV, CS_MODE_RISCV64);
+        ret = dis.init(CS_ARCH_RISCV, CS_MODE_RISCV64);
     } else if (arch == "riscv64c") {
-        dis.init(CS_ARCH_RISCV, CS_MODE_RISCVC);
+        ret = dis.init(CS_ARCH_RISCV, CS_MODE_RISCVC);
     } else {
-        dis.init(CS_ARCH_X86, CS_MODE_64);
+        ret = dis.init(CS_ARCH_X86, CS_MODE_64);
+    }
+
+    if (ret) {
+        std::cerr << "Capstone initialization failed. Check library installation" << std::endl;
+        exit(1);
     }
 
     while (!simpts_file.eof())
@@ -82,32 +87,41 @@ static void plugin_init(std::string& bench_name, std::string& arch)
 
 static void vcpu_insn_exec_before(unsigned int cpu_index, void *udata)
 {
-    cs_insn *insn;
     uint64_t pc = (uint64_t)udata;
 
     assert(instructions.find(pc) != instructions.end());
 
-    int count = dis.decode((unsigned char*)pc, instructions.at(pc), insn);
+    std::cout << "Executing inst at pc:" << std::hex << pc << std::endl;
 
-    assert(count > 0);
+    /*
+    TODO: capstone disassembly does not work for RISCV, investigate
+    cs_insn *cs_insn;
+    auto insn = instructions.at(pc);
+    int count = dis.decode(qemu_plugin_insn_data(insn), qemu_plugin_insn_size(insn), cs_insn);
 
-    #if DEBUG
-    if (count > 0) {
-        for (int i = 0; i < count; i++) {
-            std::cout << "Inst callback 0x" << std::hex << pc << " " << insn[i].mnemonic << " " << insn[i].op_str << std::endl;
+    if (0) {
+        static uint64_t disas_count = 0;
+        if (count > 0) {
+            disas_count++;
+            for (int i = 0; i < count; i++) {
+                std::cout << "Inst callback 0x" << std::hex << pc << " " << cs_insn[i].mnemonic << " " << cs_insn[i].op_str << std::endl;
+            }
+        } else {
+            std::cout << "Inst decode failed for insn at pc:" << std::hex << pc << std::endl;
+            assert(0);
         }
-    } else {
-        assert(0);
     }
-    #endif
+    assert(count > 0);
+    */
+
 
     inst_dumped++;
 }
 
-static void vcpu_mem(unsigned int cpu_index, qemu_plugin_meminfo_t meminfo, uint64_t vaddr, void *udata)
-{
+static void vcpu_mem(unsigned int cpu_index, qemu_plugin_meminfo_t meminfo, uint64_t vaddr, void *udata) {
     uint64_t pc = (uint64_t)udata;
-    std::cout << "Mem callback 0x" << std::hex << pc << " addr:" << vaddr << " store:" << qemu_plugin_mem_is_store(meminfo) << std::endl;
+    std::cout << "Mem callback 0x" << std::hex << pc << " vaddr:" << vaddr
+              << " store:" << qemu_plugin_mem_is_store(meminfo) << std::endl;
 }
 
 static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb);
@@ -150,13 +164,15 @@ static void tb_record(qemu_plugin_id_t id, struct qemu_plugin_tb *tb)
         // Start tracing the execution
         for (size_t i = 0; i < insns; i++) {
             struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
+            
             uint64_t pc = qemu_plugin_insn_vaddr(insn);
 
             if (instructions.find(pc) == instructions.end()) {
-                instructions.insert(std::make_pair(pc, qemu_plugin_insn_size(insn)));
+                instructions.insert(std::make_pair(pc, insn));
             }
             qemu_plugin_register_vcpu_insn_exec_cb(insn, vcpu_insn_exec_before, QEMU_PLUGIN_CB_NO_REGS, (void *)pc);
             qemu_plugin_register_vcpu_mem_cb(insn, vcpu_mem, QEMU_PLUGIN_CB_NO_REGS, rw, (void *)pc);
+            
             std::cout << "Installing inst and mem cbs for insn " << qemu_plugin_insn_disas(insn) << " insn: " << std::hex << insn << " at pc:" << std::hex << pc << std::endl;
         }
     }

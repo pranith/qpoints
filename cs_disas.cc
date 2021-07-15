@@ -1,21 +1,20 @@
 #include "cs_disas.h"
 #include <iostream>
 
-cs_disas::cs_disas(cs_arch arch, cs_mode mode)
+cs_disas::cs_disas()
 {
-    init(arch, mode);
 }
 
-void cs_disas::init(cs_arch arch, cs_mode mode)
+cs_err cs_disas::init(cs_arch arch, cs_mode mode)
 {
     pf = { arch, mode};
     cs_err err = cs_open(pf.arch, pf.mode, &handle);
-    if (err) {
-        std::cerr << "Failed on cs_open with error: " << err << std::endl;
-        return;
+
+    if (err == CS_ERR_OK) {
+	    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
     }
 
-    cs_option(handle, CS_OPT_DETAIL, CS_OPT_ON);
+    return err;
 }
 
 cs_disas::~cs_disas()
@@ -23,11 +22,11 @@ cs_disas::~cs_disas()
     cs_close(&handle);
 }
 
-int cs_disas::decode(unsigned char *code, int size, cs_insn *&insn)
+int cs_disas::decode(const void *code, int size, cs_insn *&insn)
 {
     int count;
 
-    count = cs_disasm(handle, code, size, 0, 0, &insn);
+    count = cs_disasm(handle, (const uint8_t*)code, size, 0, 0, &insn);
 
     return count;
 }
