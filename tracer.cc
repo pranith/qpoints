@@ -22,8 +22,6 @@ extern "C" {
 #include <stdio.h>
 #include <zlib.h>
 
-#include "cs_disas.h"
-
 #define INTERVAL_SIZE 10000000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -45,8 +43,6 @@ static uint32_t interval_id = 0;
 
 static std::map<uint64_t, struct qemu_plugin_insn *> instructions;
 
-static cs_disas dis;
-
 void plugin_exit(qemu_plugin_id_t id, void *p)
 {
     simpts_file.close();
@@ -56,22 +52,6 @@ static void plugin_init(std::string& bench_name, std::string& arch)
 {
     std::string simpts_file_name = bench_name + ".simpts";
     simpts_file.open(simpts_file_name.c_str(), std::ifstream::in);
-    cs_err ret;
-
-    if (arch == "arm64") {
-        ret = dis.init(CS_ARCH_ARM64, CS_MODE_ARM);
-    } else if (arch == "riscv64") {
-        ret = dis.init(CS_ARCH_RISCV, CS_MODE_RISCV64);
-    } else if (arch == "riscv64c") {
-        ret = dis.init(CS_ARCH_RISCV, CS_MODE_RISCVC);
-    } else {
-        ret = dis.init(CS_ARCH_X86, CS_MODE_64);
-    }
-
-    if (ret) {
-        std::cerr << "Capstone initialization failed. Check library installation" << std::endl;
-        exit(1);
-    }
 
     while (!simpts_file.eof())
     {
