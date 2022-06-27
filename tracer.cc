@@ -22,7 +22,7 @@ extern "C" {
 #include <stdio.h>
 #include <zlib.h>
 
-#define INTERVAL_SIZE 10000000 /* 100M instructions */
+#define INTERVAL_SIZE 100000000 /* 100M instructions */
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
