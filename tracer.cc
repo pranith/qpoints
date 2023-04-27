@@ -114,9 +114,9 @@ static void callback_reset(qemu_plugin_id_t id)
 
 static void tb_exec(unsigned int cpu_index, void *udata)
 {
-    uint64_t interval = inst_count / INTERVAL_SIZE;
-
     lock.lock();
+    
+    uint64_t interval = inst_count / INTERVAL_SIZE;
 
     if (tracing_enabled) {
         if (inst_dumped > INTERVAL_SIZE) {
